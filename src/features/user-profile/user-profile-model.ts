@@ -31,6 +31,18 @@ export async function retrieveUserProfileFromDatabaseById(
 }
 
 /**
+ * Retrieves a user profile by its email.
+ *
+ * @param email The email of the user profile.
+ * @returns The user profile or null.
+ */
+export async function retrieveUserProfileFromDatabaseByEmail(
+  email: UserProfile['email'],
+) {
+  return prisma.userProfile.findUnique({ where: { email } });
+}
+
+/**
  * Retrieves many user profiles.
  *
  * @param page The page number (starting at 1).
@@ -38,11 +50,11 @@ export async function retrieveUserProfileFromDatabaseById(
  * @returns A list of user profiles.
  */
 export async function retrieveManyUserProfilesFromDatabase({
-  page,
-  pageSize,
+  page = 0,
+  pageSize = 10,
 }: {
-  page: number;
-  pageSize: number;
+  page?: number;
+  pageSize?: number;
 }) {
   const skip = (page - 1) * pageSize;
   return prisma.userProfile.findMany({
@@ -50,26 +62,6 @@ export async function retrieveManyUserProfilesFromDatabase({
     take: pageSize,
     orderBy: { createdAt: 'desc' },
   });
-}
-
-interface PaginationOptions {
-  skip: number;
-  take: number;
-}
-
-export async function getAllUserProfilesFromDatabase({
-  skip,
-  take,
-}: PaginationOptions) {
-  const profiles = await prisma.userProfile.findMany({
-    skip,
-    take,
-    orderBy: {
-      createdAt: 'asc',
-    },
-  });
-
-  return profiles;
 }
 
 /* UPDATE */

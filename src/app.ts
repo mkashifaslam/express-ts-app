@@ -1,3 +1,4 @@
+import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import express from 'express';
 
@@ -8,6 +9,7 @@ export function buildApp(): Express {
 
   // Middleware for JSON parsing.
   app.use(express.json());
+  app.use(cookieParser());
 
   // Group routes under /api/v1.
   app.use('/api/v1', apiV1Router);

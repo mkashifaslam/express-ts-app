@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 
+import { requireAuthentication } from '~/middleware/require-authentication.js';
 import {
   validateBody,
   validateParams,
@@ -10,44 +11,10 @@ import { getErrorMessage } from '~/utils/get-error-message.js';
 
 import {
   deleteUserProfileFromDatabaseById,
-  getAllUserProfilesFromDatabase,
+  retrieveManyUserProfilesFromDatabase,
   retrieveUserProfileFromDatabaseById,
-  saveUserProfileToDatabase,
   updateUserProfileInDatabaseById,
 } from './user-profile-model.js';
-
-export async function createUserProfile(
-  request: Request,
-  response: Response,
-  next: NextFunction,
-) {
-  try {
-    const body = await validateBody(
-      z.object({
-        id: z.string().cuid2().optional(),
-        email: z.string().email(),
-        name: z.string().optional(),
-        createdAt: z.string().optional(),
-        updatedAt: z.string().optional(),
-      }),
-      request,
-      response,
-    );
-
-    try {
-      const profile = await saveUserProfileToDatabase(body);
-      response.status(201).json(profile);
-    } catch (error) {
-      const message = getErrorMessage(error);
-
-      if (message.includes('Unique constraint failed')) {
-        response.status(409).json({ message: 'Profile already exists' });
-      }
-    }
-  } catch (error) {
-    next(error);
-  }
-}
 
 export async function getAllUserProfiles(
   request: Request,
@@ -55,6 +22,7 @@ export async function getAllUserProfiles(
   next: NextFunction,
 ) {
   try {
+    requireAuthentication(request, response);
     const query = await validateQuery(
       z.object({
         page: z.coerce.number().positive().default(1),
@@ -64,9 +32,9 @@ export async function getAllUserProfiles(
       response,
     );
 
-    const profiles = await getAllUserProfilesFromDatabase({
-      skip: (query.page! - 1) * query.pageSize!,
-      take: query.pageSize!,
+    const profiles = await retrieveManyUserProfilesFromDatabase({
+      page: query.page,
+      pageSize: query.pageSize,
     });
 
     response.status(200).json(profiles);
@@ -81,6 +49,7 @@ export async function getUserProfileById(
   next: NextFunction,
 ) {
   try {
+    requireAuthentication(request, response);
     const { id } = await validateParams(
       z.object({ id: z.string().cuid2() }),
       request,
@@ -104,6 +73,7 @@ export async function updateUserProfile(
   next: NextFunction,
 ) {
   try {
+    requireAuthentication(request, response);
     const { id } = await validateParams(
       z.object({ id: z.string().cuid2() }),
       request,
@@ -120,10 +90,10 @@ export async function updateUserProfile(
       response,
     );
 
-    // Check if there are any fields to update
+    // Check if there are any fields to update.
     if (Object.keys(body).length === 0) {
       response.status(400).json({ message: 'No valid fields to update' });
-      // Check if trying to update id
+      // Check if trying to update id.
     } else if ('id' in body) {
       response.status(400).json({ message: 'ID cannot be updated' });
     } else {
@@ -154,6 +124,7 @@ export async function deleteUserProfile(
   next: NextFunction,
 ) {
   try {
+    requireAuthentication(request, response);
     const { id } = await validateParams(
       z.object({ id: z.string().cuid2() }),
       request,

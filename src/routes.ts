@@ -7,5 +7,5 @@ import { userProfileRoutes } from '~/features/user-profile/user-profile-routes.j
 export const apiV1Router = Router();
 
 apiV1Router.use('/health-check', healthCheckRoutes);
-apiV1Router.use('/user-authentication', userAuthenticationRoutes);
+apiV1Router.use(userAuthenticationRoutes);
 apiV1Router.use('/user-profiles', userProfileRoutes);

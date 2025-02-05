@@ -1,10 +1,14 @@
-import { createId, isCuid } from '@paralleldrive/cuid2';
+import { createId } from '@paralleldrive/cuid2';
 import type { UserProfile } from '@prisma/client';
 import request from 'supertest';
 import { describe, expect, onTestFinished, test } from 'vitest';
 
 import { buildApp } from '~/app.js';
 
+import {
+  generateJwtToken,
+  JWT_COOKIE_NAME,
+} from '../user-authentication/user-authentication-helpers.js';
 import { createPopulatedUserProfile } from './user-profile-factories.js';
 import {
   deleteUserProfileFromDatabaseById,
@@ -30,8 +34,13 @@ async function setup(numberOfProfiles = 1) {
     }
   });
 
+  const authenticatedUser = createPopulatedUserProfile();
+  await saveUserProfileToDatabase(authenticatedUser);
+  const token = generateJwtToken(authenticatedUser);
+
   return {
     app,
+    token,
     profiles: profiles.sort(
       (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
     ),
@@ -40,112 +49,25 @@ async function setup(numberOfProfiles = 1) {
 
 describe('/api/v1/user-profiles', () => {
   describe('/', () => {
-    describe('POST', () => {
-      test('given: valid user profile data, should: return a 201 with the created profile', async () => {
-        const { app } = await setup(0);
-        const profileData = createPopulatedUserProfile();
-
-        onTestFinished(async () => {
-          try {
-            await deleteUserProfileFromDatabaseById(profileData.id);
-          } catch {
-            // The test failed so there was nothing to clean up.
-          }
-        });
-
-        const actual = await request(app)
-          .post('/api/v1/user-profiles')
-          .send(profileData)
-          .expect(201);
-        const expected = {
-          id: profileData.id,
-          email: profileData.email,
-          name: profileData.name,
-          createdAt: profileData.createdAt.toISOString(),
-          updatedAt: profileData.updatedAt.toISOString(),
-          hashedPassword: profileData.hashedPassword,
-        };
-
-        expect(actual.body).toEqual(expected);
-      });
-
-      test('given: missing email, should: return a 400 with an error message', async () => {
-        const { app } = await setup(0);
-        const profileData = { name: 'Test User' };
-
-        const actual = await request(app)
-          .post('/api/v1/user-profiles')
-          .send(profileData)
-          .expect(400);
-        const expected = {
-          message: 'Bad Request',
-          errors: [
-            {
-              code: 'invalid_type',
-              expected: 'string',
-              message: 'Required',
-              path: ['email'],
-              received: 'undefined',
-            },
-          ],
-        };
-
-        expect(actual.body).toEqual(expected);
-      });
-
-      test('given: only required fields, should: return a 201 with profile and default values', async () => {
-        const { app } = await setup(0);
-        const { email } = createPopulatedUserProfile();
-
-        onTestFinished(async () => {
-          try {
-            await deleteUserProfileFromDatabaseById(actual.body.id);
-          } catch {
-            // The test failed so there was nothing to clean up.
-          }
-        });
-
-        const actual = await request(app)
-          .post('/api/v1/user-profiles')
-          .send({ email })
-          .expect(201);
-        const expected = {
-          id: expect.any(String),
-          email,
-          name: '',
-          createdAt: expect.any(String),
-          updatedAt: expect.any(String),
-          hashedPassword: expect.any(String),
-        };
-
-        expect(actual.body).toEqual(expected);
-        expect(isCuid(actual.body.id)).toEqual(true);
-      });
-
-      test('given: profile with given ID already exists, should: return a 409 with an error message', async () => {
-        const { app, profiles } = await setup(1);
-        const [existingProfile] = profiles as [UserProfile];
-        const newProfileData = createPopulatedUserProfile({
-          id: existingProfile.id,
-        });
-
-        const actual = await request(app)
-          .post('/api/v1/user-profiles')
-          .send(newProfileData)
-          .expect(409);
-        const expected = { message: 'Profile already exists' };
-
-        expect(actual.body).toEqual(expected);
-      });
-    });
-
     describe.skip('GET', () => {
+      test('given: an unauthenticated request, should: return a 401', async () => {
+        const { app } = await setup();
+
+        const { status: actual } = await request(app).get(
+          '/api/v1/user-profiles',
+        );
+        const expected = 401;
+
+        expect(actual).toEqual(expected);
+      });
+
       test('given: multiple profiles exist, should: return a 200 with paginated profiles', async () => {
-        const { app, profiles } = await setup(3);
+        const { app, profiles, token } = await setup(3);
         const [first, second] = profiles as [UserProfile, UserProfile];
 
         const actual = await request(app)
           .get('/api/v1/user-profiles')
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .query({ page: 1, pageSize: 2 })
           .expect(200);
         const expected = [
@@ -170,7 +92,7 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: query params exist, should: return a 200 with profiles for the requested page', async () => {
-        const { app, profiles } = await setup(5);
+        const { app, profiles, token } = await setup(5);
         const [third, fourth] = profiles.slice(2, 4) as [
           UserProfile,
           UserProfile,
@@ -178,6 +100,7 @@ describe('/api/v1/user-profiles', () => {
 
         const actual = await request(app)
           .get('/api/v1/user-profiles')
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .query({ page: 2, pageSize: 2 })
           .expect(200);
         const expected = [
@@ -204,11 +127,12 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: no query params, should: return a 200 with default pagination values', async () => {
-        const { app, profiles } = await setup(15);
+        const { app, profiles, token } = await setup(15);
         const firstTenProfiles = profiles.slice(0, 10);
 
         const actual = await request(app)
           .get('/api/v1/user-profiles')
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .expect(200);
         const expected = firstTenProfiles.map(profile => ({
           id: profile.id,
@@ -228,11 +152,12 @@ describe('/api/v1/user-profiles', () => {
   describe('/:id', () => {
     describe('GET', () => {
       test('given: profile exists, should: return a 200 with the profile', async () => {
-        const { app, profiles } = await setup();
+        const { app, profiles, token } = await setup();
         const [profile] = profiles as [UserProfile];
 
         const actual = await request(app)
           .get(`/api/v1/user-profiles/${profile.id}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .expect(200);
         const expected = {
           id: profile.id,
@@ -247,10 +172,11 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: profile does not exist, should: return a 404 with error message', async () => {
-        const { app } = await setup(0);
+        const { app, token } = await setup(0);
         const nonExistentId = createId();
         const actual = await request(app)
           .get(`/api/v1/user-profiles/${nonExistentId}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .expect(404);
         const expected = { message: 'Not Found' };
 
@@ -259,13 +185,27 @@ describe('/api/v1/user-profiles', () => {
     });
 
     describe('PATCH', () => {
-      test('given: profile exists and valid update data, should: return a 200 with the updated profile', async () => {
+      test('given: an unauthenticated request, should: return a 401', async () => {
         const { app, profiles } = await setup();
+        const [profile] = profiles as [UserProfile];
+        const updates = { name: 'Updated Name' };
+
+        const { status: actual } = await request(app)
+          .patch(`/api/v1/user-profiles/${profile.id}`)
+          .send(updates);
+        const expected = 401;
+
+        expect(actual).toEqual(expected);
+      });
+
+      test('given: profile exists and valid update data, should: return a 200 with the updated profile', async () => {
+        const { app, profiles, token } = await setup();
         const [profile] = profiles as [UserProfile];
 
         const updates = { name: 'Updated Name' };
         const actual = await request(app)
           .patch(`/api/v1/user-profiles/${profile.id}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .send(updates)
           .expect(200);
         const expected = {
@@ -281,12 +221,13 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: invalid id, should: return a 404 with an error message', async () => {
-        const { app } = await setup(0);
+        const { app, token } = await setup(0);
         const updates = { name: 'Updated Name' };
         const nonExistentId = createId();
 
         const actual = await request(app)
           .patch(`/api/v1/user-profiles/${nonExistentId}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .send(updates)
           .expect(404);
         const expected = { message: 'Not Found' };
@@ -295,11 +236,12 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: empty update object, should: return a 400 with an error message', async () => {
-        const { app, profiles } = await setup();
+        const { app, profiles, token } = await setup();
         const [profile] = profiles as [UserProfile];
 
         const actual = await request(app)
           .patch(`/api/v1/user-profiles/${profile.id}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .send({})
           .expect(400);
         const expected = { message: 'No valid fields to update' };
@@ -308,12 +250,13 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: attempt to update id, should: return a 400 with an error message', async () => {
-        const { app, profiles } = await setup();
+        const { app, profiles, token } = await setup();
         const [profile] = profiles as [UserProfile];
 
         const updates = { id: 'new-id' };
         const actual = await request(app)
           .patch(`/api/v1/user-profiles/${profile.id}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .send(updates)
           .expect(400);
         const expected = {
@@ -333,11 +276,12 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: missing id in URL, should: return a 404', async () => {
-        const { app } = await setup();
+        const { app, token } = await setup();
         const updates = { name: 'Updated Name' };
 
         const actual = await request(app)
           .patch('/api/v1/user-profiles/')
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .send(updates);
         const expected = 404;
 
@@ -346,12 +290,25 @@ describe('/api/v1/user-profiles', () => {
     });
 
     describe('DELETE', () => {
+      test('given: an unauthenticated request, should: return a 401', async () => {
+        const { app, profiles } = await setup();
+        const [profile] = profiles as [UserProfile];
+
+        const { status: actual } = await request(app).delete(
+          `/api/v1/user-profiles/${profile.id}`,
+        );
+        const expected = 401;
+
+        expect(actual).toEqual(expected);
+      });
+
       test('given: existing profile, should: return a 200 with the deleted profile', async () => {
-        const { app, profiles } = await setup(1);
+        const { app, profiles, token } = await setup(1);
         const [profile] = profiles as [UserProfile];
 
         const actual = await request(app)
           .delete(`/api/v1/user-profiles/${profile.id}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .expect(200);
         const expected = {
           id: profile.id,
@@ -359,17 +316,19 @@ describe('/api/v1/user-profiles', () => {
           name: profile.name,
           createdAt: profile.createdAt.toISOString(),
           updatedAt: profile.updatedAt.toISOString(),
+          hashedPassword: profile.hashedPassword,
         };
 
         expect(actual.body).toEqual(expected);
       });
 
       test('given: profile does not exist, should: return a 404 with an error message', async () => {
-        const { app } = await setup(0);
+        const { app, token } = await setup(0);
         const nonExistentId = createId();
 
         const actual = await request(app)
           .delete(`/api/v1/user-profiles/${nonExistentId}`)
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
           .expect(404);
         const expected = { message: 'Not Found' };
 
@@ -377,9 +336,11 @@ describe('/api/v1/user-profiles', () => {
       });
 
       test('given: missing id in URL, should: return a 404', async () => {
-        const { app } = await setup();
+        const { app, token } = await setup();
 
-        const actual = await request(app).delete('/api/v1/user-profiles/');
+        const actual = await request(app)
+          .delete('/api/v1/user-profiles/')
+          .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`]);
         const expected = 404;
 
         expect(actual.status).toEqual(expected);
