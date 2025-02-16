@@ -1,5 +1,7 @@
 import { Router } from 'express';
 
+import { asyncHandler } from '~/utils/async-handler.js';
+
 import {
   deleteUserProfile,
   getAllUserProfiles,
@@ -9,9 +11,9 @@ import {
 
 const router = Router();
 
-router.get('/', getAllUserProfiles);
-router.get('/:id', getUserProfileById);
-router.patch('/:id', updateUserProfile);
-router.delete('/:id', deleteUserProfile);
+router.get('/', asyncHandler(getAllUserProfiles));
+router.get('/:id', asyncHandler(getUserProfileById));
+router.patch('/:id', asyncHandler(updateUserProfile));
+router.delete('/:id', asyncHandler(deleteUserProfile));
 
 export { router as userProfileRoutes };

@@ -17,12 +17,12 @@ describe('generateJwtToken()', () => {
       updatedAt: new Date('2025-01-29T11:25:38.342Z'),
       hashedPassword: 'b6d93ffb-8093-4940-bd1f-c9e8020851e4',
     };
+    const jwtToken = generateJwtToken(userProfile);
 
-    const actual = generateJwtToken(userProfile);
+    const actual = jwtToken.startsWith('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+    const expected = true;
 
-    expect(actual.startsWith('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')).toEqual(
-      true,
-    );
+    expect(actual).toEqual(expected);
   });
 });
 

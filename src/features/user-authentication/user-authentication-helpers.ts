@@ -69,7 +69,7 @@ export function setJwtCookie(response: Response, token: string) {
 }
 
 /**
- * Clear the JWT cookie.
+ * Modifies the response to instruct the browser to delete the JWT cookie.
  *
  * @param response The response object to clear the cookie from.
  */
