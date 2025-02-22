@@ -167,7 +167,7 @@ describe('/api/v1/register', () => {
 });
 
 describe('/api/v1/logout', () => {
-  test('given: a valid JWT cookie, should: clear the JWT cookie and return a 200', async () => {
+  test('given: any POST request, should: clear the JWT cookie and return a 200', async () => {
     const { app } = await setup();
 
     const response = await request(app).post('/api/v1/logout').expect(200);

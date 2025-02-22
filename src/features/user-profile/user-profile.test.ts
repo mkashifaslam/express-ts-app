@@ -24,19 +24,26 @@ async function setup(numberOfProfiles = 1) {
     ),
   );
 
-  onTestFinished(async () => {
-    try {
-      await Promise.all(
-        profiles.map(profile => deleteUserProfileFromDatabaseById(profile.id)),
-      );
-    } catch {
-      // The test failed so there was nothing to clean up.
-    }
-  });
-
   const authenticatedUser = createPopulatedUserProfile();
   await saveUserProfileToDatabase(authenticatedUser);
   const token = generateJwtToken(authenticatedUser);
+
+  onTestFinished(async () => {
+    try {
+      await Promise.all(
+        [...profiles, authenticatedUser].map(profile =>
+          deleteUserProfileFromDatabaseById(profile.id),
+        ),
+      );
+    } catch {
+      // We need to catch here to handle tests that delete user profiles.
+      // If a test fails and the implementation code does NOT delete the user
+      // profiles, we need to delete them in the try block.
+      // If the test passes and the implementation code deletes the user
+      // profiles, this cleanup will not be needed and would throw, which is why
+      // we need to catch the error.
+    }
+  });
 
   return {
     app,
@@ -151,6 +158,18 @@ describe('/api/v1/user-profiles', () => {
 
   describe('/:id', () => {
     describe('GET', () => {
+      test('given: an unauthenticated request, should: return a 401', async () => {
+        const { app, profiles } = await setup();
+        const [profile] = profiles as [UserProfile];
+
+        const { status: actual } = await request(app).get(
+          `/api/v1/user-profiles/${profile.id}`,
+        );
+        const expected = 401;
+
+        expect(actual).toEqual(expected);
+      });
+
       test('given: profile exists, should: return a 200 with the profile', async () => {
         const { app, profiles, token } = await setup();
         const [profile] = profiles as [UserProfile];
@@ -202,7 +221,7 @@ describe('/api/v1/user-profiles', () => {
         const { app, profiles, token } = await setup();
         const [profile] = profiles as [UserProfile];
 
-        const updates = { name: 'Updated Name' };
+        const updates = { name: 'Updated Name', ignoreMe: 'ignoreMe' };
         const actual = await request(app)
           .patch(`/api/v1/user-profiles/${profile.id}`)
           .set('Cookie', [`${JWT_COOKIE_NAME}=${token}`])
